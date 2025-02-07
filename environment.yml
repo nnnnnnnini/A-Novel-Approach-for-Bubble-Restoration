@@ -1,4 +1,4 @@
-name: ai-ffpe
+name: new_cycle
 channels:
 - pytorch
 - defaults
