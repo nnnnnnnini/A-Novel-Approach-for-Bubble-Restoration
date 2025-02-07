@@ -15,7 +15,7 @@ import util.util as util
 
 class CycleGANModel(BaseModel):
     """
-    This class implements the CycleGAN model, for learning image-to-image translation without paired data.
+    This class implements an improvement to the CycleGAN model by incorporating contrastive learning loss.
 
     The model training requires '--dataset_mode unaligned' dataset.
     By default, it uses a '--netG resnet_9blocks' ResNet generator,
@@ -23,6 +23,7 @@ class CycleGANModel(BaseModel):
     and a least-square GANs objective ('--gan_mode lsgan').
 
     CycleGAN paper: https://arxiv.org/pdf/1703.10593.pdf
+    CUT paper: https://arxiv.org/abs/2007.15651
     """
     @staticmethod
     def modify_commandline_options(parser, is_train=True):
@@ -35,13 +36,15 @@ class CycleGANModel(BaseModel):
         Returns:
             the modified parser.
 
-        For CycleGAN, in addition to GAN losses, we introduce lambda_A, lambda_B, and lambda_identity for the following losses.
-        A (source domain), B (target domain).
-        Generators: G_A: A -> B; G_B: B -> A.
-        Discriminators: D_A: G_A(A) vs. B; D_B: G_B(B) vs. A.
-        Forward cycle loss:  lambda_A * ||G_B(G_A(A)) - A|| (Eqn. (2) in the paper)
-        Backward cycle loss: lambda_B * ||G_A(G_B(B)) - B|| (Eqn. (2) in the paper)
-        Identity loss (optional): lambda_identity * (||G_A(B) - B|| * lambda_B + ||G_B(A) - A|| * lambda_A) (Sec 5.2 "Photo generation from paintings" in the paper)
+        For new method, in addition to GAN losses, we introduce lambda_A, lambda_B, lambda_identity, lambda_sr, and lambda_patchNCE for the following losses.
+        X (source domain), Y (target domain).
+        Generators: G(G-A): X -> Y; F(G-B): Y -> X.
+        Discriminators: D_X(D_B): F(Y) vs. X; D_Y(D_A): G(X) vs. Y
+        Forward cycle loss:  lambda_A * ||F(G(X)) - X|| 
+        Backward cycle loss: lambda_B * ||G(F(Y)) - Y|| 
+        Identity loss (optional): lambda_identity * (||G(Y) - Y|| * lambda_B + ||F(X) - X|| * lambda_A) 
+        Self-regularization loss: lambda_sr * (||X - G(X)|| + ||Y - F(Y)||)
+        PatchNCE loss 
         Dropout is not used in the original CycleGAN paper.
         """
         # parser.set_defaults(no_dropout=True, no_antialias=True, no_antialias_up=True)  # default CycleGAN did not use dropout
@@ -49,16 +52,15 @@ class CycleGANModel(BaseModel):
 
 
         if is_train:
-            parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
-            parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
-            ## 权重原为0.5 改为0
+            parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (X -> Y -> X)')
+            parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (Y -> X -> Y)')
             parser.add_argument('--lambda_identity', type=float, default=0.5, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
 
-        ## 新增
-        parser.add_argument('--lambda_GAN', type=float, default=1.0, help='weight for GAN loss：GAN(G(X))')
-        parser.add_argument('--lambda_NCE', type=float, default=1.0, help='weight for NCE loss: NCE(G(X), X)')
+        ## NEW
+        parser.add_argument('--lambda_GAN', type=float, default=1.0, help='weight for GAN loss：G,F')
+        parser.add_argument('--lambda_NCE', type=float, default=1.0, help='weight for NCE loss: NCE(G,H,X) ,NCE(F,H,Y)')
         parser.add_argument('--nce_idt', type=util.str2bool, nargs='?', const=True, default=False,
-                            help='use NCE loss for identity mapping: NCE(G(Y), Y))')
+                            help='use NCE loss for identity mapping: NCE(G,H,X) ,NCE(F,H,Y)')
         parser.add_argument('--nce_layers', type=str, default='0,1', help='compute NCE loss on which layers')#'0,4,8,12,16'
         parser.add_argument('--nce_includes_all_negatives_from_minibatch',
                             type=util.str2bool, nargs='?', const=True, default=False,
@@ -68,8 +70,7 @@ class CycleGANModel(BaseModel):
         parser.add_argument('--netF_nc', type=int, default=256)
         parser.add_argument('--nce_T', type=float, default=0.07, help='temperature for NCE loss')
         parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
-        ## 权重原为0.03 改为0
-        parser.add_argument('--self_regularization', type=float, default=0,
+        parser.add_argument('--self_regularization', type=float, default=0.O3,
                             help='loss between input and generated image')
         parser.add_argument('--flip_equivariance',
                             type=util.str2bool, nargs='?', const=True, default=False,
@@ -78,31 +79,27 @@ class CycleGANModel(BaseModel):
         return parser
 
     def __init__(self, opt):
-        """Initialize the CycleGAN class.
+        """Initialize the  class.
 
         Parameters:
             opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        ## 修改 新增了ncea,necb两个损失
-        self.loss_names = ['D_A', 'D_B', 'G_A', 'G_B', 'cycle_A', 'cycle_B', 'idt_A', 'idt_B', 'NCE_A', 'NCE_B']#
+        ## add ncea,necb loss
+        self.loss_names = ['D_A', 'D_B', 'G_A', 'G_B', 'cycle_A', 'cycle_B', 'idt_A', 'idt_B', 'NCE_A', 'NCE_B']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['real_A', 'fake_B', 'rec_A']
         visual_names_B = ['real_B', 'fake_A', 'rec_B']
 
-        #if self.isTrain and self.opt.lambda_identity > 0.0:  # if identity loss is used, we also visualize idt_B=G_A(B) ad idt_A=G_A(B)
-        #    visual_names_A.append('idt_B')
-        #    visual_names_B.append('idt_A')
-        ## 以上三行修改为
         if opt.nce_idt and self.isTrain and self.opt.lambda_identity > 0.0:
-            self.loss_names += ['NCE_Y', 'NCE_X']# , 'NCE_X'
+            self.loss_names += ['NCE_Y', 'NCE_X']
             visual_names_A += ['idt_A']
             visual_names_B += ['idt_B']
 
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
-        ## 修改 加入netF
+        ## add netF
         if self.isTrain:
             self.model_names = ['G_A', 'G_B', 'D_A', 'D_B','F_A', 'F_B']#
         else:  # during test time, only load Gs
@@ -115,7 +112,7 @@ class CycleGANModel(BaseModel):
                                         not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, self.gpu_ids, opt=opt)
         self.netG_B = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.normG,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, opt.no_antialias, opt.no_antialias_up, self.gpu_ids, opt=opt)
-        ## 新增网络F定义
+        ## define F( OR H)
         self.netF_A = networks.define_F(opt.input_nc, opt.netF, opt.normG, not opt.no_dropout, opt.init_type,
                                         opt.init_gain, opt.no_antialias, self.gpu_ids, opt)
         self.netF_B = networks.define_F(opt.output_nc, opt.netF, opt.normG, not opt.no_dropout, opt.init_type,
@@ -136,7 +133,7 @@ class CycleGANModel(BaseModel):
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             self.criterionCycle = torch.nn.L1Loss()
             self.criterionIdt = torch.nn.L1Loss()
-            ## 新增nce
+            ## Add nce
             self.nce_layers = [int(i) for i in self.opt.nce_layers.split(',')]
             self.criterionNCE = []
             for nce_layer in self.nce_layers:
@@ -162,11 +159,7 @@ class CycleGANModel(BaseModel):
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        #self.fake_B = self.netG_A(self.real_A)  # G_A(A)
-        #self.rec_A = self.netG_B(self.fake_B)   # G_B(G_A(A))
-        #self.fake_A = self.netG_B(self.real_B)  # G_B(B)
-        #self.rec_B = self.netG_A(self.fake_A)   # G_A(G_B(B))
-        ## 以上四行修改为以下内容
+        
         self.real1 = torch.cat((self.real_A, self.real_B),
                                dim=0) if self.opt.nce_idt and self.opt.isTrain else self.real_A
         self.real2 = torch.cat((self.real_B, self.real_A),
@@ -252,7 +245,7 @@ class CycleGANModel(BaseModel):
         # Backward cycle loss || G_A(G_B(B)) - B||
         self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_B).mean() * lambda_B
         # combined loss and calculate gradients
-        ## 新增
+        ## add nce and sr loss
         if self.opt.lambda_NCE > 0.0:
             self.loss_NCE_A = self.calculate_NCE1_loss(self.real_A, self.fake_B)
             self.loss_NCE_B = self.calculate_NCE2_loss(self.real_B, self.fake_A)
@@ -275,25 +268,18 @@ class CycleGANModel(BaseModel):
         else:
             loss_NCE_A_both = self.loss_NCE_A
             loss_NCE_B_both = self.loss_NCE_B
-        ## 修改 新加入 nce和 sr loss
+        ## add  nce and sr loss
         self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B +  loss_NCE_A_both  + loss_NCE_B_both + self.loss_SR_A  + self.loss_SR_B + self.loss_idt_A + self.loss_idt_B
-        '''
-        if self.opt.amp:
-            with amp.scale_loss(self.loss_G, self.optimizer_G) as scaled_loss:
-                scaled_loss.backward()
-        else:
-        '''
         self.loss_G.backward()
 
     def data_dependent_initialize(self,data):
-        ##全部为新增
+        ##new add function
         self.set_input(data)
         bs_per_gpu = self.real_A.size(0) // max(len(self.opt.gpu_ids), 1)
         self.real_A = self.real_A[:bs_per_gpu]
         self.real_B = self.real_B[:bs_per_gpu]
         self.forward()  # compute fake images: G_A(A)，G_B(B)
         if self.opt.isTrain:
-            ##先生成器损失还是先判别器
             self.backward_G()  # calculate graidents for G
             self.backward_D_A()  # calculate gradients for D_A
             self.backward_D_B()  # calculate graidents for D_B
@@ -323,7 +309,7 @@ class CycleGANModel(BaseModel):
         # G_A and G_B
         self.set_requires_grad([self.netD_A, self.netD_B], False)  # Ds require no gradients when optimizing Gs
         self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
-        ## 新增 F相关的梯度内容
+        ## add grad_F
         if self.opt.netF == 'mlp_sample':
             self.optimizer_F.zero_grad()
         self.backward_G()             # calculate gradients for G_A and G_B
@@ -338,7 +324,7 @@ class CycleGANModel(BaseModel):
         self.backward_D_B()      # calculate graidents for D_B
         self.optimizer_D.step()  # update D_A and D_B's weights
 
-    ## 新增nce和sr函数
+    ## ADD nce and sr loss functions
     def calculate_NCE1_loss(self, src, tgt):
         n_layers = len(self.nce_layers)
         feat_q = self.netG_A(tgt, self.nce_layers, encode_only=True)
