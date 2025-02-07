@@ -47,4 +47,4 @@ If you find our work useful in your research or if you use parts of this code pl
 
 
 ### Acknowledgments
-Our code is developed based on [FFPEPlus](https://github.com/DeepMIALab/FFPEPlus).
+Our code is developed based on [FFPE++](https://github.com/DeepMIALab/FFPEPlus).
