@@ -2,7 +2,7 @@
 
 # A Novel Approach for Bubble Restoration in Histopathological Images
 
-In this work, we introduce FFPE++ to improve the quality of FFPE tissue sections using an unpaired image-to-image translation technique that converts FFPE images with artifacts into high-quality FFPE images without the need for explicit image pairing and annotation.
+We propose a novel method for bubble restoration in pathological images. This method combines CycleGAN with contrastive learning to better restore cell-level details within the bubbles.
 
 ### Training and Test
 
@@ -39,8 +39,6 @@ python train.py --dataroot /home/bubble_repair/training{dataroot_train_dir_name}
 ```bash
 python test.py --dataroot /home/bubble_repair/training{dataroot_train_dir_name} --name ${model_results_dir_name} --model cycle_gan --phase test  --epoch ${epoch_number}  --num_test ${number_of_test_images} --results_dir ${result_dir_name} --netG unet_256 --gpu_ids 0 --load_size 256 --crop_size 256 --display_winsize 256
 ```
-
-The test results will be saved to a html file here: ``` ./results/${result_dir_name}/latest_train/index.html ``` 
 
 ## Reference
 
