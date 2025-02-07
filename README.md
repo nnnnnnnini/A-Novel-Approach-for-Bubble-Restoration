@@ -1,6 +1,6 @@
 
 
-# FFPE++: Improving the Quality of Formalin-Fixed Paraffin-Embedded Tissue Imaging via Contrastive Unpaired Image-to-Image Translation
+# A Novel Approach for Bubble Restoration in Histopathological Images
 
 <img src="imgs/FFPE++_full_pipeline_JUNE (1).png" width="800px"/>
 
