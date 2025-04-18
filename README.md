@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # A-Novel-Approach-for-Bubble-Restoration
 We propose a novel method for bubble restoration in pathological images. This method combines CycleGAN with contrastive learning to better restore cell-level details within the bubbles.
 
@@ -54,4 +53,3 @@ If you find our work useful in your research or if you use parts of this code pl
 
 ### Acknowledgments
 Our code is developed based on [FFPE++](https://github.com/DeepMIALab/FFPEPlus).
->>>>>>> copymaster
