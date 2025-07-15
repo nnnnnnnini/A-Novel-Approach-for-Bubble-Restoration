@@ -1,45 +1,10 @@
 
 
-# FFPE++: Improving the Quality of Formalin-Fixed Paraffin-Embedded Tissue Imaging via Contrastive Unpaired Image-to-Image Translation
+# A Novel Approach for Bubble Restoration in Histopathological Images
 
-<img src="imgs/FFPE++_full_pipeline_JUNE (1).png" width="800px"/>
-
-
-In this work, we introduce FFPE++ to improve the quality of FFPE tissue sections using an unpaired image-to-image translation technique that converts FFPE images with artifacts into high-quality FFPE images without the need for explicit image pairing and annotation.
-
-## Example Results
-
-### FFPE artifacts correction in Lung Specimens
-<img src="imgs/brain_gif.gif" width="800px"/>
-
-### Frozen to FFPE Translation in Lung Specimens
-<img src="imgs/lung_gif.gif" width="800px"/>
-
-
-## Prerequisites
-- Linux or macOS
-- Python 3
-- CPU or NVIDIA GPU + CUDA CuDNN
-
-
-### Getting started
-
-- Clone this repo:
-```bash
-git clone https://github.com/DeepMIALab/FFPE
-cd FFPEPlus   
-```
-
-- Install PyTorch 1.1 and other dependencies (e.g., torchvision, visdom, dominate, gputil).
-
-- For pip users, please type the command `pip install -r requirements.txt`.
-
-- For Conda users,  you can create a new Conda environment using `conda env create -f environment.yml`.
+We propose a novel method for bubble restoration in pathological images. This method combines CycleGAN with contrastive learning to better restore cell-level details within the bubbles.
 
 ### Training and Test
-
-- To replicate the results, you may download [OV](https://portal.gdc.cancer.gov/projects/TCGA-OV)  project for Ovary, [LUAD](https://portal.gdc.cancer.gov/projects/TCGA-LUAD) and [LUSC](https://portal.gdc.cancer.gov/projects/TCGA-LUSC) projects for Lung, and [THCA](https://portal.gdc.cancer.gov/projects/TCGA-THCA) project for Thyroid from TCGA Data Portal and create a subset using these .txt files.
-- To extract the patches from WSIs and create PNG files, please follow the instructions given in [FFPEPlus/Data_preprocess](https://github.com/DeepMIALab/AI-FFPE/tree/main/Data_preprocess) section.
 
 The data used for training are expected to be organized as follows:
 ```bash
@@ -65,24 +30,15 @@ Data_Path                # DIR_TO_TRAIN_DATASET
 
 - To view training results and loss plots, run `python -m visdom.server` and click the URL http://localhost:8097.
 
-- Train the FFPE++ model:
+- Train the model:
 ```bash
-python train.py --dataroot ./datasets/Frozen/${dataroot_train_dir_name} --name ${model_results_dir_name} --CUT_mode CUT --batch_size 1
+python train.py --dataroot /home/bubble_repair/training{dataroot_train_dir_name} --name ${model_results_dir_name} --model cycle_gan  --batch_size 1 --display_port 8096 --lr 0.0002 --num_threads 4 --gpu_ids 0 --load_size 286 --crop_size 256 --display_winsize 256 --netG unet_256 
 ```
 
-- Test the FFPE++ model:
+- Test the model:
 ```bash
-python test.py --dataroot ./datasets/Frozen/${dataroot_test_dir_name}  --name ${result_dir_name} --CUT_mode CUT --phase test --epoch ${epoch_number} --num_test ${number_of_test_images}
+python test.py --dataroot /home/bubble_repair/training{dataroot_train_dir_name} --name ${model_results_dir_name} --model cycle_gan --phase test  --epoch ${epoch_number}  --num_test ${number_of_test_images} --results_dir ${result_dir_name} --netG unet_256 --gpu_ids 0 --load_size 256 --crop_size 256 --display_winsize 256
 ```
-
-The test results will be saved to a html file here: ``` ./results/${result_dir_name}/latest_train/index.html ``` 
-
-
-
-### AI-FFPE, AI-FFPE without Spatial Attention Block, AI-FFPE without self-regularization loss, CUT, FastCUT, and CycleGAN
-
-<img src="imgs/ablation.png" width="800px"/>
-
 
 ## Reference
 
@@ -91,4 +47,4 @@ If you find our work useful in your research or if you use parts of this code pl
 
 
 ### Acknowledgments
-Our code is developed based on [CUT](https://github.com/taesungp/contrastive-unpaired-translation).
+Our code is developed based on [FFPE++](https://github.com/DeepMIALab/FFPEPlus).
