@@ -13,7 +13,7 @@ except ImportError as error:
 '''
 import util.util as util
 
-##ours method
+##no sr loss
 class CycleGANModel(BaseModel):
     """
     This class implements the CycleGAN model, for learning image-to-image translation without paired data.
@@ -69,8 +69,8 @@ class CycleGANModel(BaseModel):
         parser.add_argument('--netF_nc', type=int, default=256)
         parser.add_argument('--nce_T', type=float, default=0.07, help='temperature for NCE loss')
         parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
-        ## 权重原为0.03
-        parser.add_argument('--self_regularization', type=float, default=0.03,
+        ## 权重原为0.03 没有sr 权重设为0
+        parser.add_argument('--self_regularization', type=float, default=0.0,
                             help='loss between input and generated image')
         parser.add_argument('--flip_equivariance',
                             type=util.str2bool, nargs='?', const=True, default=False,
